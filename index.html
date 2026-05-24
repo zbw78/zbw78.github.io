@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+  <title>时光同学录 · 青春纪念册</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:linear-gradient(145deg,#f7f1e9 0%,#ecdcc9 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem}
+    .app-container{width:100%;max-width:1200px;background:#fffaf5;box-shadow:0 30px 50px rgba(0,0,0,0.15);border-radius:2.5rem;padding:2rem;min-height:650px}
+    .hidden{display:none!important}
+    .title-main{font-size:2.5rem;font-weight:600;color:#5c3b1f;text-align:center;letter-spacing:4px;margin-bottom:.4rem}
+    .subtitle{color:#8b6b4b;text-align:center;font-style:italic;margin-bottom:1.8rem}
+    .card{background:#fff;border-radius:1.8rem;padding:1.8rem;box-shadow:0 8px 20px rgba(140,90,40,.1);border:1px solid #f0dfcc;margin-bottom:1.5rem}
+    .btn{background:linear-gradient(135deg,#c8996b,#b07d4b);border:none;color:#fff;padding:.7rem 1.5rem;border-radius:2.5rem;font-weight:600;cursor:pointer;transition:.2s;display:inline-flex;align-items:center;gap:.3rem;font-size:.95rem;min-height:44px}
+    .btn:hover{background:linear-gradient(135deg,#b8864a,#9c6b3a);transform:translateY(-1px)}
+    .btn-outline{background:0 0;border:1.5px solid #b58b6b;color:#5c3b1f}
+    .btn-sm{padding:.4rem 1rem;font-size:.8rem;min-height:36px}
+    .btn-danger{background:linear-gradient(135deg,#c46b6b,#a54a4a)}
+    input,textarea,select{width:100%;padding:.7rem 1rem;border:1px solid #ddc7b0;border-radius:1.2rem;background:#fefaf5;font-size:.95rem;margin:.4rem 0 .8rem;font-family:inherit}
+    input:focus,textarea:focus{outline:0;border-color:#b5834a;box-shadow:0 0 0 3px rgba(180,120,60,.2)}
+    label{font-weight:500;color:#4d3822;display:block;margin-top:.5rem}
+    .flex-row{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}
+    .avatar-img{width:85px;height:85px;border-radius:50%;object-fit:cover;border:3px solid #e7cfb0;background:#f4ede5;flex-shrink:0}
+    .avatar-small{width:45px;height:45px;border-radius:50%;object-fit:cover;border:2px solid #dbbc8c;margin:2px}
+    .tag{display:inline-block;background:#ece0d1;color:#4a3620;padding:.2rem .8rem;border-radius:2rem;font-size:.8rem;margin:.2rem}
+    .field-group{background:#fdf8f2;border-radius:1.2rem;padding:1rem;margin-bottom:1rem;border:1px solid #ecdcc9}
+    .field-values{margin-top:.3rem}
+    .field-value-item{display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem}
+    .field-value-item input{flex:1;margin:0}
+    .small-icon-btn{background:0 0;border:0;font-size:1.2rem;color:#b58b6b;cursor:pointer;padding:0 .3rem}
+    .fixed-category-label{font-weight:700;color:#5c3b1f;margin-bottom:.3rem;display:block}
+    .user-list-item{display:flex;align-items:center;justify-content:space-between;padding:.7rem;border-bottom:1px solid #f0e0ce;cursor:pointer}
+    .user-list-item:hover{background:#faf3ea}
+    .pagination{display:flex;gap:.5rem;justify-content:center;margin-top:1rem}
+    .group-title{font-weight:700;color:#8b5a3c;margin:1rem 0 .5rem;border-bottom:2px solid #ecdcc9;padding-bottom:.2rem}
+    .toast{position:fixed;top:20px;right:20px;background:#5c3b1f;color:#fff;padding:1rem 2rem;border-radius:2rem;z-index:9999;animation:fadeIn .3s}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+    @media(max-width:768px){.app-container{padding:1.4rem 1.2rem;border-radius:1.8rem}.title-main{font-size:2rem}}
+    @media(max-width:480px){body{padding:.4rem}.app-container{padding:1rem .8rem;border-radius:1.4rem}.title-main{font-size:1.6rem}input,textarea{font-size:16px}}
+  </style>
+</head>
+<body>
+<div class="app-container" id="appContainer"></div>
+
+<script>
+// ===================== 配置 =====================
+const API_BASE = 'https://classmate-api.zbw78.workers.dev/api'; // 改为你的Worker URL，末尾保留/api
+
+// 全局状态
+let currentUser = null;
+let token = localStorage.getItem('jwt') || '';
+let currentView = 'login';
+let targetUserId = null;
+let classmatePage = 1, classmateSearchKeyword = '';
+const FIXED_CATEGORIES = ['邮箱','微信','QQ','电话'];
+
+// ===================== 工具函数 =====================
+function toast(msg,d=2000){const t=document.createElement('div');t.className='toast';t.innerText=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),d);}
+async function api(path,method='GET',body=null){
+  const headers={'Content-Type':'application/json'};
+  if(token)headers['Authorization']=`Bearer ${token}`;
+  const res=await fetch(`${API_BASE}${path}`,{method,headers,body:body?JSON.stringify(body):undefined});
+  if(res.status===401){logout();throw new Error('登录已过期');}
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.error||'请求失败');
+  return data;
+}
+function compressImage(file,maxW=180,maxH=180){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const canvas=document.createElement('canvas');
+        let w=img.width,h=img.height;
+        if(w>maxW||h>maxH){if(w>h){h=Math.round((h*maxW)/w);w=maxW}else{w=Math.round((w*maxH)/h);h=maxH}}
+        canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg',0.7));
+      };
+      img.onerror=reject;
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function getFirstLetter(n){if(!n)return'#';const f=n.trim().charAt(0);return/[a-zA-Z]/.test(f)?f.toUpperCase():'#'}
+function getFieldDisplayText(v){const valid=(v||[]).filter(x=>x&&x.trim());return valid.length?valid.join('、'):'无'}
+function escapeHtml(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function logout(){token='';currentUser=null;currentView='login';localStorage.removeItem('jwt');render();}
+
+// 动态字段编辑器（用于编辑资料）
+function generateFieldsEditor(fields){
+  const map={};(fields||[]).forEach(f=>{map[f.category]=f.values});
+  let html='<div id="fieldsContainer">';
+  FIXED_CATEGORIES.forEach(cat=>{
+    const vals=map[cat]||[''];
+    html+=`<div class="field-group" data-field-category="${escapeHtml(cat)}" data-fixed="true"><span class="fixed-category-label">${escapeHtml(cat)}</span><div class="field-values">${vals.map(v=>`<div class="field-value-item"><input class="field-value" value="${escapeHtml(v)}" placeholder="输入${cat}"><button class="small-icon-btn remove-value-btn" type="button">✕</button></div>`).join('')}</div><button class="btn btn-sm btn-outline add-value-btn" type="button">+ 添加值</button></div>`;
+  });
+  Object.keys(map).forEach(cat=>{
+    if(FIXED_CATEGORIES.includes(cat))return;
+    const vals=map[cat]||[''];
+    html+=`<div class="field-group" data-fixed="false"><div class="flex-row" style="justify-content:space-between;margin-bottom:.3rem"><input class="field-category" value="${escapeHtml(cat)}" placeholder="类别名称" style="flex:1"><button class="btn btn-sm btn-outline remove-field-btn" type="button">🗑 删除</button></div><div class="field-values">${vals.map(v=>`<div class="field-value-item"><input class="field-value" value="${escapeHtml(v)}" placeholder="输入值"><button class="small-icon-btn remove-value-btn" type="button">✕</button></div>`).join('')}</div><button class="btn btn-sm btn-outline add-value-btn" type="button">+ 添加值</button></div>`;
+  });
+  html+='</div><button class="btn btn-sm" id="addFieldBtn" type="button" style="margin-top:.5rem">➕ 添加自定义字段</button>';
+  return html;
+}
+function extractFieldsFromEditor(){
+  const groups=document.querySelectorAll('#fieldsContainer .field-group');
+  const fields=[];
+  groups.forEach(g=>{
+    const fixed=g.dataset.fixed==='true';
+    let cat=fixed?g.dataset.fieldCategory:(g.querySelector('.field-category')?.value.trim()||'');
+    const vals=[];g.querySelectorAll('.field-value').forEach(i=>{const v=i.value.trim();if(v)vals.push(v)});
+    if(cat)fields.push({category:cat,values:vals.length?vals:['']});
+  });
+  return fields;
+}
+
+// 页面渲染
+async function render(){
+  const container=document.getElementById('appContainer');
+  if(!currentUser){
+    container.innerHTML=currentView==='register'?renderRegisterPage():renderLoginPage();
+  }else{
+    try{
+      if(currentView==='classmateList')container.innerHTML=await renderClassmateList();
+      else if(currentView==='userDetail'&&targetUserId)container.innerHTML=await renderUserDetail(targetUserId);
+      else if(currentView==='editProfile')container.innerHTML=renderEditProfilePage();
+      else if(currentView==='works')container.innerHTML=await renderWorks();
+      else if(currentView==='adminPanel')container.innerHTML=await renderAdminPanel();
+      else if(currentUser.role==='admin')container.innerHTML=renderAdminHome();
+      else container.innerHTML=renderUserHome();
+    }catch(e){toast(e.message);if(e.message==='登录已过期')logout();}
+  }
+  attachEvents();
+}
+function renderLoginPage(){
+  return `<div style="max-width:450px;margin:0 auto"><div class="title-main">📖 时光同学录</div><div class="subtitle">记录青春，留住温暖</div>
+    <div class="card"><h3>🔐 登录</h3><input id="loginUsername" placeholder="用户名"><input type="password" id="loginPassword" placeholder="密码">
+    <button class="btn" id="loginBtn" style="width:100%">进入同学录</button>
+    <div style="text-align:center;margin-top:1rem"><a href="#" id="goRegisterLink">注册新账号</a></div>
+    <p style="color:#888;font-size:.75rem;text-align:center">管理员: admin / admin123</p></div></div>`;
+}
+function renderRegisterPage(){
+  return `<div style="max-width:450px;margin:0 auto"><div class="title-main">✨ 加入同学录</div>
+    <div class="card"><h3>注册</h3><input id="regUsername" placeholder="用户名"><input type="password" id="regPassword" placeholder="密码"><input id="regName" placeholder="真实姓名">
+    <button class="btn" id="registerSubmitBtn" style="width:100%">注册</button><a href="#" id="goLoginLink" style="display:block;text-align:center;margin-top:1rem">返回登录</a></div></div>`;
+}
+function renderUserHome(){
+  const p=currentUser.profile;
+  const av=p.avatarHistory?.slice(-1)[0]||'';
+  return `<div><div class="flex-row" style="justify-content:space-between"><h2>👋 ${p.name}</h2><button class="btn btn-outline btn-sm" id="logoutBtn">退出</button></div>
+    <div class="card" style="text-align:center">
+      ${av?`<img src="${av}" class="avatar-img">`:''}
+      <div class="flex-row" style="justify-content:center;gap:1rem;margin:1rem 0">
+        <button class="btn" id="goMyPageBtn">🏠 我的主页</button>
+        <button class="btn" id="goEditProfileBtn">✏️ 编辑资料</button>
+        <button class="btn" id="goClassmateListBtn">📋 同学录</button>
+        ${(currentUser.role==='blogger'||currentUser.role==='admin')?'<button class="btn" id="goWorksBtn">📚 作品广场</button>':''}
+      </div>
+      <p style="font-style:italic;color:#8b5a3c">${p.motto||'这个人还没有签名~'}</p>
+    </div></div>`;
+}
+function renderAdminHome(){
+  return `<div><div class="flex-row" style="justify-content:space-between"><h2>🛡️ 管理员</h2><button class="btn btn-outline btn-sm" id="logoutBtn">退出</button></div>
+    <div class="card flex-row" style="justify-content:center;gap:2rem">
+      <button class="btn" id="goMyPageBtn">🏠 我的主页</button>
+      <button class="btn" id="goAdminPanelBtn">📋 用户管理</button>
+      <button class="btn" id="goClassmateListBtn">📖 同学录</button>
+      <button class="btn" id="goWorksBtn">📚 作品广场</button>
+    </div></div>`;
+}
+async function renderClassmateList(){
+  const data=await api('/users');
+  const users=data.users.filter(u=>u.id!==currentUser.id);
+  const kw=classmateSearchKeyword.trim().toLowerCase();
+  let filtered=users;
+  if(kw)filtered=users.filter(u=>(u.profile.name&&u.profile.name.toLowerCase().includes(kw))||u.username.toLowerCase().includes(kw));
+  filtered.sort((a,b)=>(a.profile.name||a.username).localeCompare(b.profile.name||b.username,'zh'));
+  const pageSize=8,total=Math.ceil(filtered.length/pageSize)||1;
+  if(classmatePage>total)classmatePage=total;
+  const start=(classmatePage-1)*pageSize,pageUsers=filtered.slice(start,start+pageSize);
+  let groups={};pageUsers.forEach(u=>{const l=getFirstLetter(u.profile.name||u.username);(groups[l]=groups[l]||[]).push(u)});
+  let list='';for(let l of Object.keys(groups).sort()){list+=`<div class="group-title">${l}</div>`;groups[l].forEach(u=>{const av=u.profile.avatarHistory?.slice(-1)[0]||'';list+=`<div class="user-list-item" data-userid="${u.id}"><div style="display:flex;align-items:center;gap:.5rem">${av?`<img src="${av}" class="avatar-small">`:'<div class="avatar-small" style="background:#e7cfb0"></div>'}<span><strong>${u.profile.name}</strong> (${u.username})</span></div><button class="btn btn-sm btn-outline view-user-from-list">查看主页</button></div>`})}
+  return `<div><div class="flex-row" style="justify-content:space-between"><button class="btn btn-outline btn-sm" id="backToHomeFromList">← 返回</button><h3>👥 同学录</h3></div><div class="card"><input type="text" id="classmateSearchInput" placeholder="搜索..." value="${classmateSearchKeyword}"><div>${list||'<p>无</p>'}</div>${total>1?`<div class="pagination"><button class="btn btn-sm btn-outline" id="prevPageBtn" ${classmatePage===1?'disabled':''}>上一页</button><span>${classmatePage}/${total}</span><button class="btn btn-sm btn-outline" id="nextPageBtn">下一页</button></div>`:''}</div></div>`;
+}
+function renderEditProfilePage(){
+  const p=currentUser.profile;
+  return `<div><div class="flex-row" style="justify-content:space-between"><h3>✏️ 编辑资料</h3><button class="btn btn-outline btn-sm" id="backToHomeFromEdit">返回</button></div>
+    <div class="card">
+      <label>上传头像</label><input type="file" id="avatarUpload" accept="image/*">
+      <div>${p.avatarHistory?.map(i=>`<img src="${i}" class="avatar-small">`).join('')||'暂无头像'}</div>
+      <hr><label>姓名</label><input id="editName" value="${p.name||''}">
+      <label>个性签名</label><input id="editMotto" value="${p.motto||''}">
+      <label>📋 联系方式</label>${generateFieldsEditor(p.fields||[])}
+      <label>住址</label><input id="editAddress" value="${p.address||''}">
+      <label>简介</label><textarea id="editBio">${p.bio||''}</textarea>
+      <button class="btn" id="saveProfileBtn">💾 保存</button>
+    </div></div>`;
+}
+async function renderUserDetail(userId){
+  const data=await api('/users');
+  const target=data.users.find(u=>u.id===userId);
+  if(!target)return'<p>用户不存在</p>';
+  const isSelf=currentUser.id===userId;
+  const p=target.profile;
+  const latest=p.avatarHistory?.slice(-1)[0]||'';
+  const isFollowing=currentUser.following?.includes(userId);
+  return `<div><div class="flex-row" style="justify-content:space-between"><button class="btn btn-outline btn-sm" id="backFromDetailBtn">← 返回</button><h3>${p.name} 的主页</h3></div>
+    <div class="card"><div class="flex-row" style="align-items:flex-start">${latest?`<img src="${latest}" class="avatar-img">`:'<div class="avatar-img" style="background:#e7cfb0"></div>'}<div style="flex:1"><h3>${p.name}${isSelf?' <small>(我)</small>':''}</h3><p style="font-style:italic;color:#8b5a3c">${p.motto||'无'}</p>${(p.fields||[]).map(f=>`<p><strong>${f.category}:</strong> ${getFieldDisplayText(f.values)}</p>`).join('')}<p>📍 ${p.address||'无'}</p><p>📝 ${p.bio||'无'}</p></div></div>
+    ${isSelf?`<button class="btn btn-sm" id="editMyPageBtn">✏️ 编辑主页</button>`:''}
+    ${!isSelf?`<button class="btn btn-sm" id="followBtn" data-userid="${userId}">${isFollowing?'❤️ 已关注':'🤍 关注'}</button>`:''}
+    </div>
+    ${(target.role==='blogger'||target.role==='admin')?`<div class="card"><h4>📚 ${p.name}的作品</h4><div id="userWorksContainer">加载中...</div></div>`:''}</div>`;
+}
+async function renderWorks(){
+  const data=await api('/works');
+  const works=data.works;
+  let html=`<div><div class="flex-row" style="justify-content:space-between"><button class="btn btn-outline btn-sm" id="backToHomeFromWorks">← 返回</button><h3>📚 作品广场</h3></div>`;
+  if(!works.length)html+='<p>暂无作品</p>';
+  else works.forEach(w=>{
+    html+=`<div class="card" style="position:relative"><h4>${w.title} <small>(${w.type})</small></h4><p>作者: ${w.authorName} | ❤️ ${w.likes.length} | 💬 ${w.comments.length}</p><p>${w.content}</p><div class="flex-row" style="gap:.5rem;margin-top:.5rem"><button class="btn btn-sm ${w.likes?.includes(currentUser.id)?'btn-outline':'btn'}" data-workid="${w.id}" data-action="like">${w.likes?.includes(currentUser.id)?'❤️ 已赞':'🤍 点赞'}</button><button class="btn btn-sm btn-outline" data-workid="${w.id}" data-action="comment">💬 评论</button></div></div>`;
+  });
+  html+=`<button class="btn" id="publishWorkBtn" style="margin-top:1rem">✍️ 发布作品</button></div>`;
+  return html;
+}
+async function renderAdminPanel(){
+  const users=(await api('/users')).users;
+  const settings=await api('/admin/settings');
+  return `<div><div class="flex-row" style="justify-content:space-between"><button class="btn btn-outline btn-sm" id="backFromAdminBtn">← 返回</button><h3>用户管理</h3></div>
+    <div class="card">
+      <div class="flex-row" style="justify-content:space-between">
+        <button class="btn btn-sm" id="createUserBtn">➕ 创建用户</button>
+        <button class="btn btn-sm" id="batchImportBtn">📥 批量导入</button>
+      </div>
+      <div class="flex-row" style="margin-top:1rem">
+        <label><input type="checkbox" id="regSwitch" ${settings.registrationOpen?'checked':''}> 开放注册</label>
+        <label><input type="checkbox" id="publishSwitch" ${settings.publishEnabled?'checked':''}> 允许发布作品</label>
+      </div>
+    </div>
+    <div class="card">${users.map(u=>`<div class="user-list-item"><span><strong>${u.profile.name}</strong> (${u.username}) ${u.role==='blogger'?'🎨':''}</span><button class="btn btn-sm btn-outline editUserBtn" data-userid="${u.id}">编辑</button></div>`).join('')}</div></div>`;
+}
+
+// 事件绑定
+function attachEvents(){
+  document.getElementById('loginBtn')?.addEventListener('click',async()=>{
+    const username=document.getElementById('loginUsername').value.trim();
+    const password=document.getElementById('loginPassword').value;
+    try{
+      const data=await api('/login','POST',{username,password});
+      token=data.token;localStorage.setItem('jwt',token);currentUser=data.user;currentView='home';render();
+    }catch(e){toast(e.message)}
+  });
+  document.getElementById('goRegisterLink')?.addEventListener('click',e=>{e.preventDefault();currentView='register';render()});
+  document.getElementById('goLoginLink')?.addEventListener('click',e=>{e.preventDefault();currentView='login';render()});
+  document.getElementById('registerSubmitBtn')?.addEventListener('click',async()=>{
+    const u=document.getElementById('regUsername').value.trim();
+    const p=document.getElementById('regPassword').value;
+    const n=document.getElementById('regName').value.trim();
+    if(!u||!p||!n)return toast('请填写完整');
+    try{await api('/register','POST',{username:u,password:p,name:n});toast('注册成功');currentView='login';render()}catch(e){toast(e.message)}
+  });
+  document.getElementById('logoutBtn')?.addEventListener('click',logout);
+  document.getElementById('goMyPageBtn')?.addEventListener('click',()=>{targetUserId=currentUser.id;currentView='userDetail';render()});
+  document.getElementById('goEditProfileBtn')?.addEventListener('click',()=>{currentView='editProfile';render()});
+  document.getElementById('goClassmateListBtn')?.addEventListener('click',()=>{classmatePage=1;classmateSearchKeyword='';currentView='classmateList';render()});
+  document.getElementById('goWorksBtn')?.addEventListener('click',()=>{currentView='works';render()});
+  document.getElementById('backToHomeFromList')?.addEventListener('click',()=>{currentView='home';render()});
+  document.getElementById('backToHomeFromEdit')?.addEventListener('click',()=>{currentView='home';render()});
+  document.getElementById('backToHomeFromWorks')?.addEventListener('click',()=>{currentView='home';render()});
+  document.getElementById('saveProfileBtn')?.addEventListener('click',async()=>{
+    const name=document.getElementById('editName').value.trim();
+    const motto=document.getElementById('editMotto').value.trim();
+    const fields=extractFieldsFromEditor();
+    const address=document.getElementById('editAddress').value.trim();
+    const bio=document.getElementById('editBio').value.trim();
+    try{await api('/profile','PUT',{name,motto,fields,address,bio});currentUser.profile={...currentUser.profile,name,motto,fields,address,bio};toast('已保存');currentView='home';render()}catch(e){toast(e.message)}
+  });
+  document.getElementById('avatarUpload')?.addEventListener('change',async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    const base64=await compressImage(file);
+    if(!currentUser.profile.avatarHistory)currentUser.profile.avatarHistory=[];
+    currentUser.profile.avatarHistory.push(base64);
+    try{await api('/profile','PUT',{avatarHistory:currentUser.profile.avatarHistory});toast('头像已更新');render()}catch(e){toast(e.message)}
+  });
+  document.getElementById('classmateSearchInput')?.addEventListener('input',e=>{classmateSearchKeyword=e.target.value;classmatePage=1;render()});
+  document.getElementById('prevPageBtn')?.addEventListener('click',()=>{if(classmatePage>1)classmatePage--;render()});
+  document.getElementById('nextPageBtn')?.addEventListener('click',()=>{classmatePage++;render()});
+  document.querySelectorAll('.view-user-from-list')?.forEach(b=>b.addEventListener('click',e=>{targetUserId=e.target.closest('.user-list-item').dataset.userid;currentView='userDetail';render()}));
+  document.getElementById('backFromDetailBtn')?.addEventListener('click',()=>{targetUserId=null;currentView='classmateList';render()});
+  document.getElementById('followBtn')?.addEventListener('click',async()=>{
+    const uid=targetUserId;
+    try{
+      if(currentUser.following?.includes(uid)){await api('/unfollow','POST',{targetUserId:uid});currentUser.following=currentUser.following.filter(id=>id!==uid)}
+      else{await api('/follow','POST',{targetUserId:uid});if(!currentUser.following)currentUser.following=[];currentUser.following.push(uid)}
+      toast('操作成功');render();
+    }catch(e){toast(e.message)}
+  });
+  document.getElementById('publishWorkBtn')?.addEventListener('click',()=>{
+    const type=prompt('类型 (article/image/post)','post');
+    const title=prompt('标题');
+    const content=prompt('内容');
+    if(!title)return;
+    api('/works','POST',{type,title,content}).then(()=>{toast('发布成功');currentView='works';render()}).catch(e=>toast(e.message));
+  });
+  document.querySelectorAll('[data-action="like"]')?.forEach(b=>b.addEventListener('click',async()=>{
+    await api(`/works/${b.dataset.workid}/like`,'POST');
+    currentView='works';render();
+  }));
+  document.getElementById('regSwitch')?.addEventListener('change',e=>api('/admin/settings','POST',{registrationOpen:e.target.checked}));
+  document.getElementById('publishSwitch')?.addEventListener('change',e=>api('/admin/settings','POST',{publishEnabled:e.target.checked}));
+}
+
+// 初始化
+(async function init(){
+  if(token){
+    try{const data=await api('/me');currentUser=data.user;currentView='home'}catch(e){logout()}
+  }
+  render();
+})();
+</script>
+</body>
+</html>
